@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airfoil CFD 2D: simulasi aliran udara di sekitar sayap</title>
+<meta name="description" content="Rancang airfoil NACA atau import file .dat, lalu lihat aliran udaranya, gaya angkat (Cl), dan hambatan (Cd) langsung dari browser.">
+<style>
+  :root { --bg:#eaf1f5; --ink:#0e2233; --soft:#46606f; --line:#c1d2dc; --smoke:#1c8aa0; --wing:#0e2233; --amber:#c76a00; --cta:#0e2233; --cta-ink:#fff;
+          --serif:Georgia,"Iowan Old Style","Palatino Linotype",serif; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b1722; --ink:#e3eef5; --soft:#9db3c2; --line:#223646; --smoke:#4fc3dc; --wing:#e3eef5; --amber:#f0a040; --cta:#4fc3dc; --cta-ink:#06222b; } }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  a { color:inherit; }
+  a:focus-visible, .btn:focus-visible { outline:3px solid var(--amber); outline-offset:3px; }
+  .wrap { max-width:1080px; margin:0 auto; padding:0 20px; }
+  header { display:flex; justify-content:space-between; align-items:center; padding:18px 0; }
+  header b { font-family:var(--serif); font-size:19px; }
+  nav a { margin-left:22px; text-decoration:none; color:var(--soft); font-size:15px; }
+  nav a:hover { color:var(--ink); }
+  .hero { display:grid; grid-template-columns:1fr 1.2fr; gap:32px; align-items:center; padding:28px 0 64px; }
+  h1 { font-family:var(--serif); font-weight:600; font-size:clamp(34px,5vw,54px); line-height:1.1; letter-spacing:-.01em; margin:0 0 18px; }
+  .lead { color:var(--soft); max-width:44ch; margin:0 0 28px; }
+  .btn { display:inline-block; background:var(--cta); color:var(--cta-ink); padding:13px 24px; border-radius:6px; text-decoration:none; font-weight:600; }
+  .btn.ghost { background:none; color:var(--ink); border:1px solid var(--line); margin-left:10px; }
+  .flow { width:100%; height:auto; display:block; }
+  .fl { fill:none; stroke:var(--smoke); stroke-width:2; stroke-linecap:round; stroke-dasharray:14 14; animation:drift 2.4s linear infinite; opacity:.85; }
+  .fl:nth-of-type(2n) { animation-duration:3.1s; opacity:.6; }
+  @keyframes drift { to { stroke-dashoffset:-56; } }
+  .wing { fill:var(--wing); }
+  section { padding:56px 0; border-top:1px solid var(--line); }
+  h2 { font-family:var(--serif); font-weight:600; font-size:clamp(26px,3.4vw,34px); line-height:1.2; margin:0 0 28px; }
+  dl { display:grid; grid-template-columns:1fr 1fr; gap:0 48px; margin:0; }
+  dl div { border-top:1px solid var(--line); padding:16px 0 22px; }
+  dt { font-weight:650; margin-bottom:4px; } dd { margin:0; color:var(--soft); max-width:46ch; }
+  ol { margin:0; padding:0; list-style:none; counter-reset:s; display:grid; gap:20px; max-width:62ch; }
+  ol li { counter-increment:s; padding-left:46px; position:relative; color:var(--soft); }
+  ol li::before { content:counter(s); position:absolute; left:0; top:0; width:30px; height:30px; border-radius:50%; border:1.5px solid var(--smoke);
+                  display:grid; place-items:center; font-weight:650; font-size:14px; color:var(--ink); }
+  ol b { color:var(--ink); }
+  .note { border-left:4px solid var(--amber); padding:4px 0 4px 20px; max-width:62ch; color:var(--soft); }
+  .note p { margin:0 0 10px; }
+  .end { text-align:center; } .end h2 { margin-bottom:20px; }
+  footer { border-top:1px solid var(--line); padding:24px 0 36px; color:var(--soft); font-size:14px; }
+  @media (max-width:800px) { .hero, dl { grid-template-columns:1fr; } nav { display:none; } .btn.ghost { margin:10px 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .fl { animation:none; } html { scroll-behavior:auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <b>Airfoil CFD 2D</b>
+    <nav><a href="#fitur">Fitur</a><a href="#cara">Cara pakai</a><a href="#batasan">Batasan</a><a href="app.html">Simulator</a></nav>
+  </header>
+
+  <div class="hero">
+    <div>
+      <h1>Lihat bagaimana udara mengalir di sekitar sayap</h1>
+      <p class="lead">Rancang airfoil NACA atau import file .dat, jalankan simulasi aliran 2D, lalu baca gaya angkat dan hambatannya, langsung dari browser.</p>
+      <a class="btn" href="app.html">Mulai simulasi</a><a class="btn ghost" href="#cara">Lihat cara pakai</a>
+    </div>
+    <svg class="flow" viewBox="0 0 640 300" role="img" aria-label="Garis aliran udara mengalir di sekitar penampang sayap">
+      <path class="fl" d="M0 40 C220 40 300 28 640 44"/>
+      <path class="fl" d="M0 78 C200 78 280 62 360 70 S560 84 640 88"/>
+      <path class="fl" d="M0 108 C140 108 200 80 300 84 S520 110 640 120"/>
+      <path class="fl" d="M0 140 C100 140 150 112 220 100 S400 100 640 126"/>
+      <path class="fl" d="M0 160 C100 160 140 190 220 192 S420 188 640 176"/>
+      <path class="fl" d="M0 190 C130 190 200 215 300 214 S520 200 640 196"/>
+      <path class="fl" d="M0 235 C220 235 300 230 400 232 S560 242 640 242"/>
+      <path class="fl" d="M0 275 C200 275 320 270 640 278"/>
+      <path class="wing" d="M170 152 C185 118 250 104 320 108 C400 112 450 135 480 150 C440 160 380 168 320 170 C250 172 190 168 170 152 Z"/>
+    </svg>
+  </div>
+
+  <section id="fitur">
+    <h2>Yang bisa kamu lakukan</h2>
+    <dl>
+      <div><dt>Bentuk airfoil sendiri</dt><dd>Atur camber, posisi camber, dan tebal untuk airfoil NACA 4-digit, atau import file .dat untuk airfoil lain seperti Clark-Y atau Eppler.</dd></div>
+      <div><dt>Simulasi aliran 2D</dt><dd>Solver Navier-Stokes laminar berjalan di server Python, dan aliran dianimasikan langkah demi langkah.</dd></div>
+      <div><dt>Baca hasilnya</dt><dd>Pilih tampilan kecepatan atau vortisitas, lalu lihat Cl, Cd, dan riwayat gayanya.</dd></div>
+      <div><dt>Simpan hasilnya</dt><dd>Unduh koordinat airfoil (.dat), riwayat gaya (.csv), dan gambar aliran (.png).</dd></div>
+    </dl>
+  </section>
+
+  <section id="cara">
+    <h2>Cara pakai</h2>
+    <ol>
+      <li><b>Pilih airfoil.</b> Geser slider NACA atau ketik angkanya, atau import file .dat.</li>
+      <li><b>Atur kondisi aliran.</b> Isi sudut serang dan bilangan Reynolds.</li>
+      <li><b>Jalankan simulasi.</b> Tunggu sekitar 10 sampai 60 detik, lalu putar animasinya dan unduh hasilnya.</li>
+    </ol>
+  </section>
+
+  <section id="batasan">
+    <h2>Yang perlu diketahui</h2>
+    <div class="note">
+      <p>Ini alat untuk belajar dan melihat pola aliran, bukan untuk desain nyata.</p>
+      <p>Alirannya laminar tanpa model turbulensi, dengan Reynolds 200 sampai 3000. Gridnya kasar, sehingga Cl cenderung terlalu rendah. Pakai hasilnya untuk membandingkan tren antar-parameter, bukan sebagai angka absolut.</p>
+    </div>
+  </section>
+
+  <section class="end">
+    <h2>Siap mencoba?</h2>
+    <a class="btn" href="app.html">Mulai simulasi</a>
+  </section>
+</div>
+<footer><div class="wrap">Airfoil CFD 2D. Solver 2D laminar sederhana untuk belajar.</div></footer>
+</body>
+</html>

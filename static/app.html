@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airfoil CFD 2D</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root { --bg:#fff; --fg:#1b1f24; --card:#f3f5f8; --ac:#1d6fd8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151a; --fg:#e6e9ee; --card:#1d222a; --ac:#5aa2ff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:1100px; margin:auto; padding:16px; display:grid; gap:14px; grid-template-columns: 280px 1fr; }
+  @media (max-width:800px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border-radius:10px; padding:14px; }
+  label { display:block; font-size:13px; margin-top:10px; }
+  input[type=range] { width:100%; }
+  button { background:var(--ac); color:#fff; border:0; border-radius:8px; padding:10px 14px; cursor:pointer; font-size:14px; }
+  button:disabled { opacity:.5; }
+  .row { display:flex; gap:8px; align-items:center; }
+  input[type=number] { width:78px; padding:4px 6px; border-radius:6px; border:1px solid #8885; background:var(--bg); color:var(--fg); }
+  details { margin-top:14px; font-size:13px; } summary { cursor:pointer; }
+  .sec { background:transparent; color:var(--ac); border:1px solid var(--ac); padding:7px 10px; font-size:13px; margin:4px 4px 0 0; }
+  h1 { font-size:20px; margin:0 0 4px; } .muted { opacity:.7; font-size:13px; } a.muted { color:inherit; }
+  #res { font-size:15px; margin-top:8px; }
+</style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <a href="index.html" class="muted">Beranda</a>
+    <h1>Airfoil CFD 2D</h1>
+    <div class="muted">NACA 4-digit parametrik + solver Navier-Stokes laminar</div>
+    <div style="margin-top:12px">
+      <button class="sec" id="imp">Import airfoil .dat</button>
+      <button class="sec" id="imp_clear" hidden>Pakai NACA lagi</button>
+      <input type="file" id="file" accept=".dat,.txt,.csv" hidden>
+      <div id="imp_info" class="muted"></div></div>
+    <div id="ctl"></div>
+    <details><summary>⚙ Pengaturan increment slider</summary><div id="cfg"></div></details>
+    <button id="run" style="margin-top:14px;width:100%">Jalankan simulasi</button>
+    <div id="res" class="muted"></div>
+    <div style="margin-top:10px"><div class="muted">Unduh:</div>
+      <button class="sec" id="ex_dat">Airfoil .dat</button>
+      <button class="sec" id="ex_csv" disabled>Riwayat .csv</button>
+      <button class="sec" id="ex_png" disabled>Gambar .png</button></div>
+  </section>
+  <section style="display:grid;gap:14px">
+    <div class="card"><div id="foil" style="height:220px"></div></div>
+    <div class="card">
+      <select id="field"><option value="speed">Kecepatan</option><option value="vort">Vortisitas</option></select>
+      <button id="play" disabled>▶ Putar</button>
+      <input type="range" id="fr" min="0" max="0" value="0" disabled style="width:40%">
+      <div id="flow" style="height:380px"></div>
+    </div>
+    <div class="card"><div id="hist" style="height:220px"></div></div>
+  </section>
+</main>
+<script>
+const C = [['m','Camber maks (%)',2,0,9,0.1],['p','Posisi camber (%)',40,10,90,1],['t','Tebal maks (%)',12,6,25,0.1],
+           ['alpha','Sudut serang (°)',4,-10,15,0.1],['Re','Reynolds',1000,200,3000,1],['steps','Langkah waktu',800,300,1500,1]];
+const el = id => document.getElementById(id);
+const ctl = el('ctl'), cfg = el('cfg');
+C.forEach(([k,l,v,mn,mx,st]) => {
+  ctl.insertAdjacentHTML('beforeend', `<label>${l} <span class="muted">(${mn}–${mx})</span><div class="row"><input type="number" id="n_${k}" min="${mn}" max="${mx}" step="${st}" value="${v}"><input type="range" id="${k}" min="${mn}" max="${mx}" step="${st}" value="${v}"></div><div class="muted" id="cn_${k}" hidden>Tidak berlaku untuk airfoil import</div></label>`);
+  cfg.insertAdjacentHTML('beforeend', `<label>${l}<input type="number" id="s_${k}" min="0.001" step="any" value="${st}" style="display:block"></label>`);
+});
+let custom = null, customName = '';
+const body = () => {
+  const g = k => { const [,,,mn,mx] = C.find(c => c[0] === k); const x = parseFloat(el('n_'+k).value);
+    return Math.min(mx, Math.max(mn, isNaN(x) ? mn : x)); };
+  return { m:g('m')/100, p:g('p')/100, t:g('t')/100, alpha:g('alpha'), Re:g('Re'), steps:g('steps'), coords:custom }; };
+const post = async (url, b) => { const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(b)});
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText); return r.json(); };
+const theme = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', font:{color:getComputedStyle(document.body).color}, margin:{t:24,r:10,b:36,l:44} };
+
+let timer;
+let lastFoil;
+async function drawFoil() {
+  const d = await post('/api/airfoil', body());
+  lastFoil = d;
+  Plotly.react('foil', [{x:d.x, y:d.y, fill:'toself', line:{color:'#1d6fd8'}, type:'scatter'}],
+    {...theme, title:'Bentuk airfoil', xaxis:{title:'x/c'}, yaxis:{scaleanchor:'x', range:[-0.3,0.3]}});
+}
+const upd = () => { clearTimeout(timer); timer = setTimeout(drawFoil, 150); };
+C.forEach(([k,,,mn,mx]) => {
+  const r = el(k), n = el('n_'+k), s = el('s_'+k);
+  r.oninput = () => { n.value = r.value; upd(); };
+  n.oninput = () => { const x = parseFloat(n.value); if (x >= mn && x <= mx) { r.value = x; upd(); } };
+  n.onchange = () => { let x = parseFloat(n.value); if (isNaN(x)) x = +r.value;
+    n.value = r.value = Math.min(mx, Math.max(mn, x)); upd(); };
+  s.onchange = () => { const x = parseFloat(s.value); if (x > 0) r.step = n.step = x; else s.value = r.step; };
+});
+drawFoil();
+
+function parseDat(txt) {   // dukung format Selig dan Lednicer; baris judul otomatis dilewati
+  const rows = txt.split(/\r?\n/).map(l => l.trim().split(/[\s,;]+/).map(Number))
+    .filter(r => r.length >= 2 && Number.isFinite(r[0]) && Number.isFinite(r[1]));
+  if (rows.length < 10) throw new Error('titik koordinat terlalu sedikit');
+  if (Number.isInteger(rows[0][0]) && Number.isInteger(rows[0][1]) && rows[0][0] > 1 && rows[0][1] > 1) {  // Lednicer
+    const nu = rows[0][0], nl = rows[0][1], up = rows.slice(1, 1+nu), lo = rows.slice(1+nu, 1+nu+nl);
+    return up.reverse().concat(lo.slice(1)).map(r => [r[0], r[1]]);
+  }
+  return rows.map(r => [r[0], r[1]]);
+}
+function setCustom(on) {
+  ['m','p','t'].forEach(k => {
+    document.getElementById(k).disabled = document.getElementById('n_'+k).disabled = on;
+    document.getElementById('cn_'+k).hidden = !on;
+    document.getElementById(k).closest('label').style.opacity = on ? 0.55 : 1;
+  });
+  document.getElementById('imp_clear').hidden = !on;
+  document.getElementById('imp_info').textContent = on ? `Memakai ${customName} (${custom.length} titik). Slider NACA dinonaktifkan.` : '';
+}
+document.getElementById('imp').onclick = () => document.getElementById('file').click();
+document.getElementById('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { custom = parseDat(await f.text()); customName = f.name; await drawFoil(); setCustom(true); }
+  catch (err) { custom = null; setCustom(false); document.getElementById('imp_info').textContent = 'Gagal import: ' + err.message; }
+  e.target.value = '';
+};
+document.getElementById('imp_clear').onclick = () => { custom = null; setCustom(false); drawFoil(); };
+const dl = (name, text) => { const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:'text/plain'})); a.download = name; a.click(); URL.revokeObjectURL(a.href); };
+const tag = () => { if (custom) return customName.replace(/\.[^.]+$/, ''); const b = body(); return `NACA_m${(b.m*100).toFixed(1)}_p${(b.p*100).toFixed(0)}_t${(b.t*100).toFixed(1)}`; };
+document.getElementById('ex_dat').onclick = () => {   // format Selig: TE atas -> LE -> TE bawah (XFOIL/XFLR5)
+  if (!lastFoil) return;
+  dl(tag() + '.dat', tag() + '\n' + lastFoil.x.map((x,i) => `${x.toFixed(6)} ${lastFoil.y[i].toFixed(6)}`).join('\n') + '\n');
+};
+document.getElementById('ex_csv').onclick = () => {
+  if (!D) return;
+  dl('riwayat_gaya.csv', 'langkah,Cl,Cd\n' + D.hist_cl.map((c,i) => `${i*5+20},${c},${D.hist_cd[i]}`).join('\n') + '\n');
+};
+document.getElementById('ex_png').onclick = async () => {
+  if (!D) return;
+  await Plotly.downloadImage('flow', {format:'png', filename:'aliran', width:1200, height:600});
+  await Plotly.downloadImage('hist', {format:'png', filename:'riwayat_gaya', width:1000, height:400});
+};
+
+let D, play = null;
+const fr = document.getElementById('fr'), fld = document.getElementById('field');
+function showFrame() {
+  const f = fld.value, z = D[f][+fr.value];
+  const sp = f === 'speed';
+  Plotly.react('flow', [{type:'heatmap', x:D.x, y:D.y, z, zsmooth:'best',
+    colorscale: sp ? 'Viridis' : 'RdBu', zmin: sp ? 0 : -20, zmax: sp ? 1.6 : 20, reversescale: !sp},
+    {type:'scatter', mode:'lines', x:D.foil.x, y:D.foil.y, fill:'toself', fillcolor:'#888',
+     line:{color:'#222', width:1}, hoverinfo:'skip', showlegend:false}],
+    {...theme, xaxis:{title:'x/c'}, yaxis:{title:'y/c', scaleanchor:'x'}});
+}
+fr.oninput = showFrame; fld.onchange = showFrame;
+document.getElementById('play').onclick = e => {
+  if (play) { clearInterval(play); play = null; e.target.textContent = '▶ Putar'; return; }
+  e.target.textContent = '⏸ Jeda';
+  play = setInterval(() => { fr.value = (+fr.value + 1) % (+fr.max + 1); showFrame(); }, 120);
+};
+document.getElementById('run').onclick = async e => {
+  const b = e.target, res = document.getElementById('res');
+  b.disabled = true; res.textContent = 'Menghitung… (bisa 10–60 detik)';
+  try {
+    const b0 = body();
+    const [F, R] = await Promise.all([post('/api/airfoil', b0), post('/api/simulate', b0)]);
+    D = R; D.foil = F;
+    fr.max = D.speed.length - 1; fr.value = fr.max; fr.disabled = false;
+    document.getElementById('play').disabled = false; showFrame();
+    document.getElementById('ex_csv').disabled = document.getElementById('ex_png').disabled = false;
+    res.innerHTML = `<b>Cl ≈ ${D.Cl.toFixed(2)}</b> &nbsp; <b>Cd ≈ ${D.Cd.toFixed(3)}</b>`;
+    const t = D.hist_cl.map((_, i) => i);
+    Plotly.react('hist', [{y:D.hist_cl, name:'Cl'}, {y:D.hist_cd, name:'Cd'}],
+      {...theme, title:'Riwayat koefisien gaya', xaxis:{title:'waktu (relatif)'}});
+  } catch (err) { res.textContent = 'Error: ' + err.message; }
+  b.disabled = false;
+};
+</script>
+</body>
+</html>
