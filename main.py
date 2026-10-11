@@ -1,3 +1,4 @@
+import os
 import threading
 from pathlib import Path
 
@@ -42,4 +43,6 @@ def run(q: Params):
         slots.release()
 
 
-app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
+# Di Vercel, folder public/ disajikan otomatis oleh platform. Mount ini hanya untuk jalan lokal (uvicorn).
+if not os.environ.get("VERCEL"):
+    app.mount("/", StaticFiles(directory=Path(__file__).parent / "public", html=True), name="static")
